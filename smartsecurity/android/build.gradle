@@ -1,0 +1,137 @@
+// Module-level build.gradle for your app
+
+apply plugin: 'com.android.application'
+apply plugin: 'kotlin-android'
+
+android {
+    namespace "com.flint.smartsecurity"
+    compileSdk compileSdkVersion
+
+    defaultConfig {
+        applicationId "com.flint.smartsecurity"
+        minSdkVersion minSdkVersion
+        targetSdkVersion targetSdkVersion
+        versionCode 1
+        versionName "1.0"
+        multiDexEnabled true
+    }
+
+    sourceSets {
+        main {
+            manifest.srcFile 'AndroidManifest.xml'
+            java.srcDirs = ['src/main/java', 'src/main/kotlin', 'src/main/groovy', 'src/main/scala']
+            aidl.srcDirs = ['src/main/java', 'src/main/kotlin', 'src/main/groovy', 'src/main/scala']
+            renderscript.srcDirs = ['src/main/java', 'src/main/kotlin', 'src/main/groovy', 'src/main/scala']
+            res.srcDirs = ['res']
+            assets.srcDirs = ['../assets']
+            jniLibs.srcDirs = ['libs']
+        }
+    }
+
+    packagingOptions {
+        resources {
+            excludes += ['META-INF/robovm/ios/robovm.xml', 'META-INF/DEPENDENCIES.txt', 'META-INF/DEPENDENCIES',
+                         'META-INF/dependencies.txt', '**/*.gwt.xml']
+            pickFirsts += ['META-INF/LICENSE.txt', 'META-INF/LICENSE', 'META-INF/license.txt', 'META-INF/LGPL2.1',
+                           'META-INF/NOTICE.txt', 'META-INF/NOTICE', 'META-INF/notice.txt']
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+        coreLibraryDesugaringEnabled true
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    kotlinOptions {
+        jvmTarget = "1.8"
+    }
+}
+
+repositories {
+    google()
+    mavenCentral()
+}
+
+dependencies {
+    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.0.4'
+    implementation "com.badlogicgames.gdx-controllers:gdx-controllers-android:$gdxControllersVersion"
+    implementation "com.badlogicgames.gdx:gdx-backend-android:$gdxVersion"
+    implementation project(':core')
+
+    // Native libraries for different architectures
+    natives "com.badlogicgames.gdx:gdx-box2d-platform:$gdxVersion:natives-arm64-v8a"
+    natives "com.badlogicgames.gdx:gdx-box2d-platform:$gdxVersion:natives-armeabi-v7a"
+    natives "com.badlogicgames.gdx:gdx-box2d-platform:$gdxVersion:natives-x86"
+    natives "com.badlogicgames.gdx:gdx-box2d-platform:$gdxVersion:natives-x86_64"
+    natives "com.badlogicgames.gdx:gdx-bullet-platform:$gdxVersion:natives-arm64-v8a"
+    natives "com.badlogicgames.gdx:gdx-bullet-platform:$gdxVersion:natives-armeabi-v7a"
+    natives "com.badlogicgames.gdx:gdx-bullet-platform:$gdxVersion:natives-x86"
+    natives "com.badlogicgames.gdx:gdx-bullet-platform:$gdxVersion:natives-x86_64"
+    natives "com.badlogicgames.gdx:gdx-freetype-platform:$gdxVersion:natives-arm64-v8a"
+    natives "com.badlogicgames.gdx:gdx-freetype-platform:$gdxVersion:natives-armeabi-v7a"
+    natives "com.badlogicgames.gdx:gdx-freetype-platform:$gdxVersion:natives-x86"
+    natives "com.badlogicgames.gdx:gdx-freetype-platform:$gdxVersion:natives-x86_64"
+    natives "com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-arm64-v8a"
+    natives "com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-armeabi-v7a"
+    natives "com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-x86"
+    natives "com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-x86_64"
+}
+
+// Task to copy Android native libraries for packaging
+tasks.register('copyAndroidNatives') {
+    doFirst {
+        file("libs/armeabi-v7a/").mkdirs()
+        file("libs/arm64-v8a/").mkdirs()
+        file("libs/x86_64/").mkdirs()
+        file("libs/x86/").mkdirs()
+
+        configurations.natives.copy().files.each { jar ->
+            def outputDir = null
+            if (jar.name.endsWith("natives-armeabi-v7a.jar")) outputDir = file("libs/armeabi-v7a")
+            if (jar.name.endsWith("natives-arm64-v8a.jar")) outputDir = file("libs/arm64-v8a")
+            if (jar.name.endsWith("natives-x86_64.jar")) outputDir = file("libs/x86_64")
+            if (jar.name.endsWith("natives-x86.jar")) outputDir = file("libs/x86")
+            if (outputDir != null) {
+                copy {
+                    from zipTree(jar)
+                    into outputDir
+                    include "*.so"
+                }
+            }
+        }
+    }
+}
+
+// Ensure native libraries are copied before JNI lib merging
+tasks.matching { it.name.contains("merge") && it.name.contains("JniLibFolders") }.configureEach { packageTask ->
+    packageTask.dependsOn 'copyAndroidNatives'
+}
+
+// Task to run the application on the connected device
+tasks.register('run', Exec) {
+    def path
+    def localProperties = project.file("../local.properties")
+    if (localProperties.exists()) {
+        Properties properties = new Properties()
+        localProperties.withInputStream { instr ->
+            properties.load(instr)
+        }
+        def sdkDir = properties.getProperty('sdk.dir')
+        path = sdkDir ? sdkDir : System.getenv("ANDROID_SDK_ROOT")
+    } else {
+        path = System.getenv("ANDROID_SDK_ROOT")
+    }
+
+    def adb = "${path}/platform-tools/adb"
+    commandLine adb, 'shell', 'am', 'start', '-n', 'com.flint.smartsecurity/com.flint.smartsecurity.android.AndroidLauncher'
+}
+
+eclipse.project.name = "smartsecurity-android"
